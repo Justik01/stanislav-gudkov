@@ -4,7 +4,7 @@ import logging
 import re
 import urllib.request
 
-from config import OPENROUTER_API_KEY, OPENROUTER_MODEL, USER_AGENT
+from config import OPENROUTER_API_KEY, OPENROUTER_MODELS, USER_AGENT
 
 # fallback if LLM is down (same keys as probe scripts)
 KEYWORDS = re.compile(
@@ -33,13 +33,13 @@ def available():
     return bool(OPENROUTER_API_KEY)
 
 
-def _call(data):
+def _call(data, model):
     payload = PROMPT + "\n\nДанные (JSON):\n" + json.dumps(data, ensure_ascii=False)
     body = json.dumps({
-        "model": OPENROUTER_MODEL,
+        "model": model,
         "messages": [{"role": "user", "content": payload}],
         "temperature": 0,
-        "max_tokens": 3000,
+        "max_tokens": 12000,
     }, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -51,9 +51,11 @@ def _call(data):
             "User-Agent": USER_AGENT,
         },
     )
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with urllib.request.urlopen(req, timeout=180) as r:
         resp = json.loads(r.read().decode("utf-8"))
     text = (resp["choices"][0]["message"]["content"] or "").strip()
+    if not text:
+        raise ValueError("empty content (reasoning ate max_tokens?)")
     if text.startswith("```"):
         text = re.sub(r"^```[a-z]*\n?|\n?```$", "", text)
     return json.loads(text)
@@ -71,29 +73,40 @@ def _regex_fallback(items):
 
 
 def classify(items):
-    """Add relevant/reason/budget to each item. Regex fallback on any LLM error."""
+    """Add relevant/reason/budget to each item. Tries each model in
+    OPENROUTER_MODELS order (2 attempts), regex fallback only for
+    batches that fail on every model."""
     if not available():
         return _regex_fallback(items)
+    models = [m.strip() for m in OPENROUTER_MODELS.split(",") if m.strip()]
     result = []
-    try:
-        for start in range(0, len(items), 20):
-            batch = items[start:start + 20]
-            data = [
-                {"i": k, "src": it["source"],
-                 "text": (it["title"] + " — " + it["text"])[:700]}
-                for k, it in enumerate(batch)
-            ]
-            verdicts = _call(data)
-            vmap = {int(v.get("i", -1)): v for v in verdicts if isinstance(v, dict)}
-            for k, it in enumerate(batch):
-                v = vmap.get(k, {})
-                it = dict(it)
-                it["relevant"] = bool(v.get("relevant"))
-                it["reason"] = str(v.get("reason") or "")[:120]
-                b = v.get("budget")
-                it["budget"] = (str(int(b)) + " руб.") if isinstance(b, (int, float)) else ""
-                result.append(it)
-        return result
-    except Exception as e:
-        logging.warning("LLM classify failed (%s) - regex fallback", e)
-        return _regex_fallback(items)
+    for start in range(0, len(items), 20):
+        batch = items[start:start + 20]
+        data = [
+            {"i": k, "src": it["source"],
+             "text": (it["title"] + " — " + it["text"])[:700]}
+            for k, it in enumerate(batch)
+        ]
+        verdicts = None
+        for model in models:
+            for attempt in (1, 2):
+                try:
+                    verdicts = _call(data, model)
+                    break
+                except Exception as e:
+                    logging.warning("LLM %s attempt %d failed: %s", model, attempt, e)
+            if verdicts is not None:
+                break
+        if verdicts is None:
+            result.extend(_regex_fallback(batch))
+            continue
+        vmap = {int(v.get("i", -1)): v for v in verdicts if isinstance(v, dict)}
+        for k, it in enumerate(batch):
+            v = vmap.get(k, {})
+            it = dict(it)
+            it["relevant"] = bool(v.get("relevant"))
+            it["reason"] = str(v.get("reason") or "")[:120]
+            b = v.get("budget")
+            it["budget"] = (str(int(b)) + " руб.") if isinstance(b, (int, float)) else ""
+            result.append(it)
+    return result

@@ -27,7 +27,10 @@ _load_env()
 
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openrouter/free")
+# comma-separated order: primary pinned model first, router as fallback
+OPENROUTER_MODELS = os.environ.get(
+    "OPENROUTER_MODELS", "recursive/flint-v1.0:free,openrouter/free"
+)
 
 # sources (validated 2026-11-09, see tracker/sources.md)
 FL_RSS = "https://www.fl.ru/rss/all.xml"

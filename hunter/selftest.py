@@ -2,7 +2,7 @@
 import json
 import urllib.request
 
-from config import OPENROUTER_MODEL, TG_BOT_TOKEN
+from config import OPENROUTER_MODELS, TG_BOT_TOKEN
 import llm_filter
 import sources
 
@@ -29,7 +29,7 @@ def main():
 
     # 3. LLM filter on up to 5 items
     if items:
-        print("llm model: " + OPENROUTER_MODEL)
+        print("llm models: " + OPENROUTER_MODELS)
         res = llm_filter.classify(items[:5])
         for r in res:
             print("  llm: %-5s | %-30s | %s" % (
