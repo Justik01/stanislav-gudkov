@@ -26,6 +26,7 @@ def _load_env():
 _load_env()
 
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
+GIS_API_KEY = os.environ.get("GIS_API_KEY", "")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 # comma-separated order: primary pinned model first, router as fallback
 OPENROUTER_MODELS = os.environ.get(
